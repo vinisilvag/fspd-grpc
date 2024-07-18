@@ -1,0 +1,129 @@
+Introdução
+Neste exercício vamos praticar o desenvolvimento de aplicações baseadas em chamadas de procedimento remotos (RPC). Muitas vezes, diversos serviços baseados em RPC são interligados entre si formando serviços mais complexos, como no caso do que se costuma chamar de arquiteturas de microsserviços. Neste exercício vamos exercitar esses conceitos em um mini-sistema.
+
+Entre os frameworks de programação com RPC existem diversas opções. Na disciplina usaremos gRPC, por ser das opções populares que não estão presas a ambiente de desenvolvimento específicos (como Flask ou node.js, por exemplo).
+
+Objetivo
+Neste exercício você deve desenvolver, usando gRPC, um serviço simples com uma carteira digital e depois uma "loja" para, usando esses dois tipos de servidores, construir um serviço mais elaborado. Dessa forma, a implementação pode ser dividida em duas partes: o serviço da carteira e o serviço de compra na loja usando ordens de pagamento da carteira.
+
+Observação: para a descrição a seguir, um "string identificador de servidor" é um string com o nome ou endereço IP de uma máquina onde um servidor executa e o número do porto usado, separados por ":", sem espaços (p.ex., "localhost:5555", "150.164.6.45:12345" ou "cristal.dcc.ufmg.br:6789"). 
+Primeira parte: um servidor de carteiras
+Primeiramente, seu objetivo é criar um par cliente/servidor que se comunique por gRPC para criar um serviço de controle de ativos financeiros, ou carteiras digitais. Cada carteira é identificada pela chave do dono (um string, que é considerado secreto e conhecido apenas pelo servidor e cada cliente) - algo como uma assinatura única. Por simplicidade, aqui esse string pode ser uma sequência de caracteres legíveis, sem espaços, com até 20 caracteres. O programa servidor manterá um diretório/container de associações de strings com valores inteiros não negativos que serão o  saldo de cada carteira.
+
+O programa servidor deve receber apenas um parâmetro de linha de comando: o número do porto a ser usado pelo servidor (inteiro, entre 2048 e 65535). Além disso, ao iniciar ele deve ler da entrada padrão uma lista de carteiras: linhas cada uma com o identificador (string) e o valor (inteiro positivo) de uma carteira, separados por um espaço. Um exemplo de conteúdo para essa entrada seria:
+
+Dorgival 10
+Bezos 1000000
+Papai_Noel 100000
+Para fins de implementação, serão usadas, no máximo, 10 contas diferentes em uma execução. Não há um número fixo de linhas, a leitura acaba quando acabar a entrada padrão (EOF).
+
+As carteiras são manipuladas usando-se ordens de pagamento: uma ordem é criada a pedido do cliente dono da carteira, debitando um determinado valor do seu saldo. A ordem é registrada pelo servidor com um identificador único e o valor associado. Neste exercício, cada ordem criada por um servidor recebe um valor sequencial, começando com 1. 
+
+Observação: como esse identificador tem que ser passado do comprador para o vendedor, em um sistema "real" ele deveria ser algum tipo de chave criptografada que não pudesse ser forjada facilmente, mas aqui vamos usar inteiros mesmo, para simplificar.
+
+Sugestão de implementação: carteiras (pares string,valor) e ordens de pagamento (pares identificador,valor) podem ser mantindas em diretórios/containers.
+
+Seu servidor de carteiras deve então oferecer o seguintes procedimentos:
+
+valor = lê saldo(carteira): recebe como parâmetro um string. Caso a carteira indicada não exista, deve retornar -1, caso contrário retorna o valor associado à carteira.
+(status,ordem) = cria ordem de pagamento(carteira,valor): cria uma ordem de pagamento debitando o valor solicitado da carteira indicada; em caso de sucesso, retorna o inteiro identificador da ordem, criado como mencionado anteriormente; se a carteira não existe, retorna -1; se o valor a ser debitado é maior que o saldo na carteira, retorna -2.
+status=transferência(ordem,conferência,carteira): em caso de sucesso, retorna zero depois de remover a ordem de pagamento indicada e fazer a transferência do valor associado para a carteira identificada (string), sendo que, como controle, verifica primeiro se a ordem possui o valor fornecido para conferência; em caso de sucesso, retorna zero; se a ordem de pagamento não existe, retorna -1; se o valor da ordem difere do valor de conferência, retorna -2; se a string não corresponde a uma carteira existente, retorna -3.
+pendências=fim da execução(): um procedimento sem parâmetros que comanda o servidor para terminar sua execução; nesse caso, o servidor deve escrever na saída padrão os valores atualizados das carteiras existentes (mesmo que sejam zero), retornar o número de ordens de pagamento ainda existentes (que serão perdidas nesse caso) e terminar sua execução depois da resposta (isso é mais complicado do que pode parecer, veja mais detalhes ao final).
+Para fins de implementação, serão criadas, no máximo, 100 ordens de pagamento durante uma execução.
+
+Certamente um sistema gerente de carteiras teria diversas outras funcionalidades, inclusive uma forma de autenticação de cada cliente, mas vamos ficar apenas com essas. Elas já serão suficientes para exercitar a comunicação por RPC.
+
+Nenhuma mensagem deve ser escrita na saída padrão do servidor durante a execução normal (mensagens de erro, obviamente, não devem ocorrer durante uma execução normal).
+
+O cliente de carteira deve receber dois parâmetros (strings): o primeiro será o identificador da carteira do cliente (p.ex., "Papai_Noel") e o segundo será um "string identificador de servidor" (como definido anteriormente) indicando onde o servidor está executando. Ele deve ler comandos da entrada padrão, um por linha, segundo a seguinte forma:
+S - consulta o saldo no servidor de carteiras para a carteira do cliente e escreve o valor retornado;
+O valor - faz um pedido de criação de uma ordem de pagamento no valor indicado a partir da carteira do cliente e escreve o valor de retorno fornecido pelo servidor, que será o identificador da ordem ou um código de erro;
+X opag valor string - aciona o método de transferência do servidor usando o inteiro opag como o identificador da ordem da ordem de pagamento criada anteriormente com o comando O, usando o valor dado para conferência do valor da ordem e usando o string como identificador da carteira de destino; o cliente deve escrever o valor inteiro devolvido pelo servidor ao executar o comando;
+F - dispara o procedimento de fim de execução do servidor, escreve o valor retornado e termina (somente nesse caso o cliente deve terminar a execução do servidor; se a entrada terminar sem um comando F, o servidor não deve terminar).
+O cliente devem poder funcionar com a entrada redirecionada a partir de um arquivo e nesse caso deve terminar depois de tratar as linhas do arquivo. Qualquer linha que não comece com S, O, X ou F deve ser simplesmente ignorada sem gerar nenhuma saída; os comandos usam espaços como separadores; os strings de identificação de contas não podem ter espaços. Pode-se assumir que se uma linha começa com uma das quatro letras (maiúsculas) elas conterão comandos bem formados.
+
+Segunda parte: um serviço de compra e venda
+Seu objetivo final é implementar um serviço de pagamentos que inclui uma "loja" que oferece um certo (único) produto e que deve ser pago através de ordens de pagamento de um servidor de carteiras.
+
+O servidor da "loja" recebe quatro parâmetros da linha de comando: um inteiro que será o preço do seu produto (com estoque infinito), o número do porto que ele deve utilizar para receber conexões dos clientes, um string identificador da conta do vendedor no servidor de carteiras e um "string identificador de servidor" (como descrito anteriormente) indicando onde o servidor de carteiras executa.
+
+Internamente ele deve manter o saldo da conta do vendedor. Esse saldo deve ser obtido no início da execução, acionando o RPC de saldo do servidor de carteira, e deve ser mantido internamente. Depois disso ele deve aceitar/exportar três comandos:
+
+preço=lê_preço(): não utiliza nenhum parâmetro e retorna apenas o preço do produto, obtido como o primeiro parâmetro da linha de comando;
+status=venda(odem): recebe como parâmetro o identificador de uma ordem de pagamento e aciona o servidor de carteiras para fazer a transferência do valor correspondente ao preço do produto para a carteira do vendedor usando a ordem de pagamento indicada. Em caso de erro na comunicação com o outro servidor, retorna -9; caso contrário, retorna o valor recebido do servidor de carteiras;
+status=fim da execução(): um procedimento sem parâmetros que indica que o servidor da loja deve terminar sua execução; nesse caso o servidor deve responder com o saldo calculado internamente para a conta do vendedor, disparar o comando de término do servidor de carteiras, exibir o valor de retorno do mesmo e terminar (novamente, isso é mais complicado do que pode parecer, veja mais detalhes ao final).
+O cliente dessa segunda parte recebe como parâmetros um string identificador da conta do comprador no servidor de carteiras, um string "identificador do servidor" de carteiras e um "string identificador do servidor" do vendedor. Ao iniciar ele deve executar o método de consulta de preço da loja e escrever na saída o valor retornado. Em seguida deve ler comandos da entrada padrão, de um dos tipos a seguir:
+C - faz a compra de um produto; para isso, executa o RPC de emissão de ordem de pagamento no servidor de carteiras com o valor do produto e, se não há erros, executa a RPC de venda no servidor da loja; escreve na saída uma linha com o valor de retorno do procedimento de ordem de serviço e, se não houver erro na primeira operação, na linha seguinte escreve o valor de retorno da operação de venda da loja;
+T - dispara a operação de término do servidor da loja, escreve na saída padrão o valor de retorno recebido e termina a execução (não afeta o servidor de carteiras); se a entrada terminar sem um comando T, o cliente deve terminar sem acionar o fim dos servidores
+F - dispara o procedimento de fim de execução do servidor de carterias, exatamente como o cliente da primeira parte; o servidor de carteiras não deve ser contactado.
+Qualquer outro conteúdo que não comece com C, F ou T deve ser simplesmente ignorado; os comandos nunca serão mal-formados. O programa deve poder funcionar com a entrada redirecionada a partir de um arquivo.
+
+Requisitos não funcionais:
+O código deve usar apenas Python, sem bibliotecas além das consideradas padrão. Não serão aceitas outras bibliotecas, nem o uso de recursos como E/S assíncrona em Python. A ideia é que os programas sejam simples, tanto quanto possível. O código deve observar exatamente o formato de saída descrito, para garantir a correção automática. Programas que funcionem mas produzam saída fora do esperado serão penalizados.
+
+A correção será feita nas máquinas linux do laboratório de graduação. Você deve se certificar de que seus programas executam corretamente naquele ambiente. Programas que não compilarem, não seguirem as determinações quanto a nomes, parâmetros de entrada e formato da saída, ou apresentarem erros durante a execução serão desconsiderados.
+
+O laboratório de graduação é onde o grpc foi instalado. Recomendo sempre testar seu código lá: https://www.crc.dcc.ufmg.br/infraestrutura/laboratorios/linux.
+A login.dcc.ufmg.br é só o gateway de entrada na rede do DCC, o CRC não instala nada lá. Na verdade, recomenda-se que não se execute nada naquela máquina. De lá, vocês podem fazer ssh para as máquinas do laboratório.
+Vocês podem também instalar a VPN do DCC nas suas máquinas. Com ela ligada, vocês conseguem fazer ssh direto para as máquinas do laboratório, sem ter que passar pela login: https://www.crc.dcc.ufmg.br/servicos/conectividade/remoto/vpn/openvpn/start
+O que deve ser entregue:
+Você deve entregar um arquivo .zip  incluindo todo o código desenvolvido por você, com um makefile como descrito a seguir. Considerando a simplicidade do sistema, um relatório final em PDF é opcional, caso você ache importante documentar decisões de projeto especiais. Entretanto, especialmente na ausência do relatório, todo o código deve ser adequadamente comentado.
+
+Preste atenção nos prazos: entregas com atraso não serão aceitas, pela proximidade do fim do semestre.
+
+O makefile a ser entregue:
+Junto com o código deve ser entregue um makefile que inclua, pelo menos, as seguintes regras:
+
+clean - remove todos os arquivos intermediários, deixando apenas os arquivos produzidos por você para e entrega; make clean sem nada para remover não deve gerar erro
+stubs - faz a geração dos stubs em Python; make stubs chamada duas vezes em seguida só deve gerar os stubs na primeira vez em que for chamada
+run_serv_banco - executa o programa servidor de carteiras
+run_cli_banco - executa o programa cliente da primeira parte
+run_serv_loja - executa o programa servidor da loja
+run_cli_loja - executa o programa cliente da segunda parte
+As regras do tipo "run_*" devem se certificar de disparar todas as regras intermediárias que podem ser necessárias para se obter um programa executável como, p.ex., executar o compilador de stubs.
+
+Para o make run_* funcionar, você pode considerar que os comandos serão executados da seguinte forma (possivelmente, em diferentes terminais):
+
+make run_cli_banco arg1=carteira_cliente arg2=nome_do_host_do_serv_banco:5555
+make run_serv_banco arg1=5555
+make run_serv_loja arg1=10 arg2=6666 arg3=carteira_loja arg4=nome_do_host_do_serv_banco:5555
+make run_cli_loja arg1=carteira_cliente arg2=nome_do_host_do_serv_banco:5555 arg3=nome_do_host_do_serv_loja:6666﻿﻿
+
+Obviamente, o valor dos argumentos pode variar. Se todos os programas forem executados na mesma máquina, o nome do servidor pode ser "localhost" em todos os casos - mas os programas devem funcionar corretamente se disparados em máquinas diferentes.
+
+Para poder executar os comandos, no makefile, supondo que os programas tenham nomes "svc_banco.py" e "cln_ban.py", "svc_loja.py" e "cln_loja.py", as regras seriam:
+
+run_serv_banco:
+     python3 svc_banco.py $(arg1)
+run_cli_banco:
+     python3 cln_banco.py $(arg1) $(arg2)
+run_serv_loja:
+     python3 svc_loja.py $(arg1) $(arg2) $(arg3) $(arg4)
+run_cli_loja:
+     python3 cln_loja.py $(arg1) $(arg2) $(arg3)
+
+Referências úteis
+Em um primeiro uso de gRPC, pode ser que vocês encontrem diversos pontos que vão exigir um pouco mais de atenção no estudo da documentação para conseguir fazer a implementação correta. Eu considero que os pontos que podem dar mais trabalho e que merecem algumas dicas são os seguintes:
+
+Como construir um makefile corretamente
+Para minha enorme surpresa, pelo visto o comando make não é mais conhecido por todos os alunos de computação. Eu sei, pode parecer pré-histórico, mas é uma ferramenta simples e eficiente para automação de processos de build. Grandes ambientes de desenvolvimento têm suas próprias soluções, mas para projetos menores make ainda resolve!
+
+A entrega de um make que facilite minha vida na avaliação automática é fortemente recomendada. Entregas que não sigam as recomendações indicadas, gerem mensagens ou comandos extras, serão (ligeiramente) penalizadas. Sendo assim, por que não aprender a usar o make corretamente? :-)
+
+Esta é uma boa referência com todos os recursos do make. Para este exercício, vocês devem precisar apenas das seções 2, 2.1 e 2.2. Não vão além disso por enquanto, para ganhar tempo.
+
+Desligar um servidor através de um RPC
+Como mencionado anteriormente, fazer um servidor de RPC parar de funcionar usando uma chamada de procedimento dele mesmo tem uma pegadinha: não basta chamar um exit() enquanto se executa o código do procedimento, ou ele vai terminar a execução antes de retornar da chamada, deixando o cliente sem resposta. E normalmente a gente só pode escrever código dentro das chamadas, já que não devemos alterar o código do stub. Cada framework de RPC tem uma solução diferente para esse problema e a solução do gRPC é bastante elegante, exigindo pouco código. Usa-se a geração de um evento dentro do código da RPC, que é capturado pelo servidor. Pode parecer complicado, mas o código para se fazer isso já está descrito no stackexchange (https://stackoverflow.com/questions/59262044/how-to-shutdown-grpc-server-from-grpc-client-in-python).
+
+Cuidados ao realizar o bind
+Como expliquei em sala na aula sobre sockets, ao fazer o bind de um servidor a um endereço:porta, é preciso não confundir "localhost" (ou "127.0.0.1") com "qualquer endereço desta máquina". O localhost é um endereço da máquina em uma rede específica, chamada loopback, que existe como uma abstração dentro do sistema operacional. Se você faz um bind com usando localhost, quer dizer que seu servidor está ligado apenas na rede loopback - e, portanto, não vê o tráfego que pode chegar da rede externa, por exemplo. O certo, ao fazer o bind, é usar '0.0.0.0', ou mesmo a string vazia, '', que correspondem à constante INADDR_ANY da biblioteca de sockets em C. Ele significa que você está ligando o seu servidor a todo e qualquer endereço IP associado à máquina onde ele está executando. Isso significa que ele vai se ligar inclusive na rede loopback, como localhost, mas também a todas as outras redes a que a máquina estiver ligada (o que é importante se a máquina tiver mais de uma interface).
+
+
+
+Dúvidas?
+Usem o fórum criado especialmente para esse exercício de programação para enviar suas dúvidas. Entretanto, não é permitido publicar código no fórum! Se você tem uma dúvida que envolve explicitamente um trecho de código, envie mensagem por e-mail diretamente para o professor.
+
+Certamente, o mundo é mais complicado...
+Como a carga horária da disciplina é limitada, como mencionado antes, este é um problema extremamente simplificado e certas práticas de desenvolvimento que são muito importantes no ambiente profissional estão sendo ignoradas/descartadas: seu código não precisa se preocupar com verificação de entradas incorretas, erros de operação, ações maliciosas. Não considerem que isso é um argumento contra essas práticas, mas em prol do foco principal da disciplina, em função do tempo disponível, temos que simplificar.
+
+Na sua vida profissional, tenham sempre em mente que testes exaustivos, programação defensiva (testar todos os tipos de entradas possíveis, etc.) e cuidados de segurança devem estar sempre entre suas preocupações durante qualquer desenvolvimento.
