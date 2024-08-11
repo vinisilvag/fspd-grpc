@@ -1,20 +1,24 @@
-
 syntax = "proto3";
-
-import "google/protobuf/empty.proto";
 
 package store;
 
 service Store {
-  rpc read_price(google.protobuf.Empty) returns (ReadPriceReply) {}
+  rpc read_price(ReadPriceRequest) returns (ReadPriceReply) {}
   rpc sell(SellRequest) returns (SellReply) {}
-  rpc end_execution(google.protobuf.Empty) returns (EndExecutionReply) {}
+  rpc end_execution(EndExecutionRequest) returns (EndExecutionReply) {}
 }
+
+message ReadPriceRequest {}
 
 message ReadPriceReply { int32 price = 1; }
 
-message SellRequest { int32 opag = 1; }
+message SellRequest { int32 payment_order = 1; }
 
 message SellReply { int32 status = 1; }
 
-message EndExecutionReply { int32 status = 1; }
+message EndExecutionRequest {}
+
+message EndExecutionReply {
+  int32 balance = 1;
+  int32 pendencies = 2;
+}

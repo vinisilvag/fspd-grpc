@@ -13,7 +13,7 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
         self._stop_event = stop_event
         self.wallets = wallets
         self.payment_orders: dict[int, int] = {}
-        self.index = 1
+        self.index = 0
 
     def balance(self, request, context):
         retval = -1
@@ -22,24 +22,37 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
         return wallet_pb2.BalanceReply(retval=retval)
 
     def create_payment_order(self, request, context):
-        if request.wallet in self.wallets:
-            if self.wallets[request.wallet] < request.value:
-                return wallet_pb2.CreatePaymentOrderReply(retval=-2)
-            else:
-                self.payment_orders[self.index] = request.value
-                # debita na carteira?
-                self.index += 1
-                return wallet_pb2.CreatePaymentOrderReply(retval=self.index - 1)
-        else:
+        if request.wallet not in self.wallets:
             return wallet_pb2.CreatePaymentOrderReply(retval=-1)
 
+        if self.wallets[request.wallet] < request.value:
+            return wallet_pb2.CreatePaymentOrderReply(retval=-2)
+
+        self.index += 1
+        self.payment_orders[self.index] = request.value
+        return wallet_pb2.CreatePaymentOrderReply(retval=self.index)
+
     def transfer(self, request, context):
-        pass
+        if request.payment_order not in self.payment_orders:
+            return wallet_pb2.TransferReply(status=-1)
+
+        if self.payment_orders[request.payment_order] != request.recount:
+            return wallet_pb2.TransferReply(status=-2)
+
+        if request.wallet not in self.wallets:
+            return wallet_pb2.TransferReply(status=-3)
+
+        self.wallets[request.wallet] -= request.recount
+        del self.payment_orders[request.payment_order]
+
+        return wallet_pb2.TransferReply(status=0)
 
     def end_execution(self, request, context):
-        # do the rest
+        for wallet, value in self.wallets.items():
+            print(wallet, value)
+
         self._stop_event.set()
-        return wallet_pb2.ShutdownResponse()
+        return wallet_pb2.EndExecutionReply(pendencies=len(self.payment_orders))
 
 
 def run():
@@ -53,11 +66,10 @@ def run():
     stop_event = threading.Event()
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     wallet_pb2_grpc.add_WalletServicer_to_server(Wallet(stop_event, wallets), server)
-    server.add_insecure_port(f"localhost:{port}")
+    server.add_insecure_port(f"0.0.0.0:{port}")
     server.start()
-    print(f"Server listening on port {port}...")
     stop_event.wait()
-    server.wait_for_termination()
+    server.stop(None)
 
 
 if __name__ == "__main__":

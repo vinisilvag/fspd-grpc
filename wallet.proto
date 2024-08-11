@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-import "google/protobuf/empty.proto";
-
 package wallet;
 
 service Wallet {
@@ -9,12 +7,12 @@ service Wallet {
   rpc create_payment_order(CreatePaymentOrderRequest)
       returns (CreatePaymentOrderReply) {}
   rpc transfer(TransferRequest) returns (TransferReply) {}
-  rpc end_execution(google.protobuf.Empty) returns (EndExecutionReply) {}
+  rpc end_execution(EndExecutionRequest) returns (EndExecutionReply) {}
 }
 
 message BalanceRequest { string wallet = 1; }
 
-message BalanceReply { int32 retval = 1; }
+message BalanceReply { int32 value = 1; }
 
 message CreatePaymentOrderRequest {
   string wallet = 1;
@@ -23,8 +21,14 @@ message CreatePaymentOrderRequest {
 
 message CreatePaymentOrderReply { int32 retval = 1; }
 
-message TransferRequest {}
+message TransferRequest {
+  int32 payment_order = 1;
+  int32 recount = 2;
+  string wallet = 3;
+}
 
 message TransferReply { int32 status = 1; }
 
-message EndExecutionReply {}
+message EndExecutionRequest {}
+
+message EndExecutionReply { int32 pendencies = 1; }

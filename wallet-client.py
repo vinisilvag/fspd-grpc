@@ -20,7 +20,7 @@ def run():
         match command:
             case "S":
                 response = stub.balance(wallet_pb2.BalanceRequest(wallet=wallet))
-                print(response.retval)
+                print(response.value)
             case "O":
                 value = int(args[0])
                 response = stub.create_payment_order(
@@ -28,11 +28,21 @@ def run():
                 )
                 print(response.retval)
             case "X":
-                opag, value, destination = args
-                opag = int(opag)
+                payment_order, value, wallet = args
+                payment_order = int(payment_order)
                 value = int(value)
+                response = stub.transfer(
+                    wallet_pb2.TransferRequest(
+                        payment_order=payment_order,
+                        recount=value,
+                        wallet=wallet,
+                    )
+                )
+                print(response.status)
             case "F":
-                pass
+                response = stub.end_execution(wallet_pb2.EndExecutionRequest())
+                print(response.pendencies)
+                break
             case _:
                 pass
 
