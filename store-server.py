@@ -22,6 +22,18 @@ class Store(store_pb2_grpc.StoreServicer):
         seller_wallet: str,
         price: int,
     ) -> None:
+        """
+        Construtor da classe que provê os procedimentos que implementam o
+        serviço de loja.
+
+        Parâmetros:
+            stop_event (threading.Event): evento usado para determinar quando
+                                          o servidor deve parar de executar
+            wallet_addr (tuple[str, int]): endereço do servidor de carteiras
+            seller_wallet (str): identificador da carteira do vendedor
+            price (int): preço do produto vendido
+        """
+
         # Evento de término do servidor
         self._stop_event = stop_event
 
@@ -33,47 +45,78 @@ class Store(store_pb2_grpc.StoreServicer):
         self.price = price
         print("price:", self.price)
 
-        # Abre um canal para se comunicar com o servidor de carteiras
-        # e buscar o saldo da conta do vendedor
-        # Quando o valor é recebido, ele é inserido na variável `balance`
-        with grpc.insecure_channel(
-            f"{wallet_addr[0]}:{wallet_addr[1]}"
-        ) as wallet_channel:
-            wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
-            balance_response = wallet_stub.balance(
-                wallet_pb2.BalanceRequest(wallet=self.seller_wallet)
-            )
-            # A especificação não determina se essa chamada pode falhar,
-            # portanto, o código foi escrito considerando que uma carteira
-            # válida sempre será informada
-            # Dessa forma, é assumido que o valor presente em balance nesse
-            # momento é um valor válido >= 0 e não um código de erro
-            self.balance = balance_response.balance
+        # Saldo em conta do vendedor
+        self.balance = 0
 
+        # A abertura do canal e a geração dos stubs é feita no construtor da
+        # classe para evitar que a comunicação tenha que ser estabelecida toda
+        # vez que for preciso comunicar com o servidor de carteiras
+        # Dessa forma, minimizamos o overhead de estabelecimento da conexão
+        # entre as duas pontas, obtendo um ligeiro ganho de desempenho
+        self.wallet_channel = grpc.insecure_channel(
+            f"{wallet_addr[0]}:{wallet_addr[1]}"
+        )
+        self.wallet_stub = wallet_pb2_grpc.WalletStub(self.wallet_channel)
+
+        self._fetch_balance()
+
+    def _fetch_balance(self):
+        """
+        Função auxiliar que consulta o saldo na carteira do vendedor e armazena
+        o resultado obtido no atributo `balance` da classe.
+        """
+
+        balance_response = self.wallet_stub.balance(
+            wallet_pb2.BalanceRequest(wallet=self.seller_wallet)
+        )
+
+        # A especificação não determina se essa chamada pode falhar,
+        # portanto, o código foi escrito considerando que uma carteira
+        # válida sempre será informada
+        # Dessa forma, é assumido que o valor presente em balance nesse
+        # momento é um valor válido >= 0 e não um código de erro
+        self.balance = balance_response.balance
         print("balance:", self.balance)
 
-    # Procedimento que lê o preço do produto
     def read_price(self, request, context):
+        """
+        Envia para o cliente o preço do produto vendido pelo servidor.
+
+        Retorna:
+            Uma mensagem de tipo ReadPriceReply contendo o preço do produto.
+        """
+
         # Monta a resposta com o preço do produto recebido como parâmetro
         return store_pb2.ReadPriceReply(price=self.price)
 
-    # Procedimento que realiza uma venda
     def sell(self, request, context):
-        # Abre um canal para se comunicar com o servidor de carteiras
-        # e realizar a operação de transferência da ordem de pagamento
-        # para a conta do vendedor
-        # Na especificação do trabalho, a possibilidade de erro de comunicação
-        # e o retorno do código de status de erro -9 me motivaram a fazer a
-        # abertura do canal no momento que a comunicação com o servidor de
-        # carteiras é necessária
-        # Dessa forma, é possível atingir o funcionamento desejado na
-        # especificação, o que não seria possível se o canal fosse aberto no
-        # construtor da classe do servidor da loja
-        with grpc.insecure_channel(
-            f"{wallet_addr[0]}:{wallet_addr[1]}"
-        ) as wallet_channel:
-            wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
-            transfer_response = wallet_stub.transfer(
+        """
+        Construtor da classe que provê os procedimentos que implementam o
+        serviço de loja.
+
+        Parâmetros:
+            stop_event (threading.Event): evento usado para determinar quando
+                                          o servidor deve parar de executar
+            wallet_addr (tuple[str, int]): endereço do servidor de carteiras
+            seller_wallet (str): identificador da carteira do vendedor
+            price (int): preço do produto vendido
+
+        Retorna:
+            Uma mensagem de tipo SellReply com o status da operação realizada:
+            0, caso a venda tenha sido feita com sucesso, -1, caso a ordem de
+            pagamento informada não exista, -2, caso o valor de conferência seja
+            diferente do valor contido na ordem de pagamento, -3, caso a
+            carteira informada não exista, ou -9, caso haja erro de comunicação
+            entre o servidor da loja e o servidor de carteiras.
+
+        """
+
+        # Try ... except para capturar algum erro de comunicação que ocorra
+        # na chamada de `transfer`
+        # Dessa forma, é possível capturar esse erro e retornar o código
+        # de erro -9, assim como a especificação do trabalho sugere
+        try:
+            transfer_response = self.wallet_stub.transfer(
                 wallet_pb2.TransferRequest(
                     payment_order=request.payment_order,
                     recount=self.price,
@@ -87,26 +130,36 @@ class Store(store_pb2_grpc.StoreServicer):
                 self.balance += self.price
             print("updated balance:", self.balance)
             return store_pb2.SellReply(status=transfer_status)
+        except:
+            return store_pb2.SellReply(status=-9)
 
-        return store_pb2.SellReply(status=-9)
-
-    # Procedimento que termina o servidor da loja
     def end_execution(self, request, context):
+        """
+        Finaliza o servidor da loja. Além disso, finaliza também o servidor de
+        carteiras, enviando como resposta o saldo atual do vendedor e o número
+        de ordens de pagamento pendentes (que serão perdidas).
+
+        Retorna:
+            Uma mensagem de tipo EndExecutionReply contendo o saldo do vendedor
+            e o número de ordens de pagamento que serão perdidas com o fim da
+            execução dos servidores.
+        """
+
         # Assim como na busca do saldo no começo da execução do servidor da
         # loja, a especificação do trabalho não diz se essa chamada pode falhar
         # ou não, portanto, estou assumindo que sempre vou conseguir terminar
         # o servidor de carteiras normalmente e, com isso, receber o número
         # de ordens de pagamento existentes no momento do término dele
-        with grpc.insecure_channel(
-            f"{wallet_addr[0]}:{wallet_addr[1]}"
-        ) as wallet_channel:
-            wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
-            # Chama o procedimento de término do servidor de carteiras
-            end_execution_response = wallet_stub.end_execution(
-                wallet_pb2.EndExecutionRequest()
-            )
-            # Recebe o número de ordens de pagamento pendentes
-            pendencies = end_execution_response.pendencies
+
+        # Chama o procedimento de término do servidor de carteiras
+        end_execution_response = self.wallet_stub.end_execution(
+            wallet_pb2.EndExecutionRequest()
+        )
+        # Recebe o número de ordens de pagamento pendentes
+        pendencies = end_execution_response.pendencies
+
+        # Fecha o canal de comunicação com o servidor de carteiras
+        self.wallet_channel.close()
 
         # Sinaliza o evento de encerramento do servidor
         self._stop_event.set()
@@ -117,6 +170,16 @@ class Store(store_pb2_grpc.StoreServicer):
 
 
 def run(price, port, seller_wallet, wallet_addr):
+    """
+    Inicia o servidor da loja.
+
+    Parâmetros:
+        price (int): preço do produto vendido pelo servidor
+        port (int): porta que o servidor da loja irá executar
+        seller_wallet (str): identificador da carteira do vendedor
+        wallet_addr (tuple[str, int]): endereço do servidor de carteiras
+    """
+
     # Define o evento de parada do servidor
     stop_event = threading.Event()
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

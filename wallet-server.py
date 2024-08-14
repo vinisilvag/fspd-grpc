@@ -11,9 +11,21 @@ import wallet_pb2
 import wallet_pb2_grpc
 
 
-# Classe que provê os procedimentos que implementam o serviço de carteira
+# Classe que provê os métodos que implementam o serviço de carteiras
 class Wallet(wallet_pb2_grpc.WalletServicer):
     def __init__(self, stop_event: threading.Event, wallets: dict[str, int]) -> None:
+        """
+        Construtor da classe que provê os procedimentos que implementam o
+        serviço de carteira.
+
+        Parâmetros:
+            stop_event (threading.Event): evento usado para determinar quando
+                                          o servidor deve parar de executar
+            wallets (dict[str, int]): dicionário com as carteiras lidas da
+                                      entrada padrão antes do servidor começar
+                                      a executar
+        """
+
         # Evento de término do servidor
         self._stop_event = stop_event
 
@@ -36,8 +48,19 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
         # Índice das ordens de pagamento
         self.payment_orders_index = 1
 
-    # Procedimento que retorna o saldo de uma carteira
     def balance(self, request, context):
+        """
+        Retorna uma mensagem com o saldo em conta da carteira informada
+        como parâmetro.
+
+        Parâmetros:
+            request.wallet (str): carteira do cliente
+
+        Retorna:
+            Uma mensagem de tipo BalanceReply contendo o saldo em conta da
+            carteira informada ou -1, caso a carteira não exista.
+        """
+
         # Verifica se a carteira informada existe
         if request.wallet in self.wallets:
             # Caso sim, retorna o saldo na carteira
@@ -46,8 +69,22 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
             # Caso não, retorna o código de erro -1
             return wallet_pb2.BalanceReply(balance=-1)
 
-    # Procedimento que cria uma ordem de pagamento
     def create_payment_order(self, request, context):
+        """
+        Cria uma ordem de pagamento a partir da carteira e do valor informado
+        para essa ordem.
+
+        Parâmetros:
+            request.wallet (str): carteira em que o valor será debitado
+            request.value (int): valor da ordem de pagamento
+
+        Retorna:
+            Uma mensagem de tipo CreatePaymentOrderReply contendo o número da
+            ordem de pagamento criada ou os códigos de erro -1, caso a carteira
+            informada não existe, ou -2, caso o saldo da carteira informada
+            seja menor que o valor da ordem de pagamento criada.
+        """
+
         # Verifica se a carteira informada existe, caso não retorna o status
         # de erro -1
         if request.wallet not in self.wallets:
@@ -72,9 +109,26 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
         # Retorna o ID da ordem de pagamento criada
         return wallet_pb2.CreatePaymentOrderReply(retval=self.payment_orders_index - 1)
 
-    # Procedimento que transfere o valor de uma ordem de pagamento para a
-    # carteira informada
     def transfer(self, request, context):
+        """
+        Transfere o dinheiro de uma ordem de pagamento para uma carteira
+        informada.
+
+        Parâmetros:
+            request.payment_order (int): número da ordem de pagamento
+            request.recount (int): valor de conferência da ordem de pagamento
+            request.wallet (str): carteira de destino do dinheiro da ordem de
+                                  pagamento
+
+        Retorna:
+            Uma mensagem do tipo TransferReply contendo o valor 0, caso a
+            operação seja feita com sucesso, ou os códigos de erro -1,
+            caso a ordem de pagamento informada não exista, -2, caso o valor de
+            conferência informado seja diferente do valor registrado na ordem
+            de pagamento, ou -3, caso a carteira informada não existe, ou -2,
+            caso a carteira informada não exista.
+        """
+
         # Verifica se a ordem de pagamento informada existe, caso não
         # retorna o status de erro -1
         if request.payment_order not in self.payment_orders:
@@ -103,8 +157,18 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
         # Retorna o status 0 (sucesso)
         return wallet_pb2.TransferReply(status=0)
 
-    # Procedimento de término da execução do servidor
     def end_execution(self, request, context):
+        """
+        Finaliza o servidor de carteiras. Exibe as carteiras registradas e o
+        saldo corrente delas e envia o número de ordens de pagamento pendentes
+        como resposta.
+
+        Retorna:
+            Uma mensagem do tipo EndExecutionReply contendo o número de ordens
+            de pagamento pendentes e que serão perdidas com a terminação do
+            servidor.
+        """
+
         # Imprime na saída padrão as carteiras e os saldos
         for wallet, value in self.wallets.items():
             print(wallet, value)
@@ -118,14 +182,21 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
 
 
 def run(port, wallets):
+    """
+    Inicia o servidor de carteiras.
+
+    Parâmetros:
+        port (int): porta que o servidor de carteiras irá executar
+        wallets (dict[str, int]): carteiras recebidas da entrada padrão
+    """
+
     # Define o evento de parada do servidor
     stop_event = threading.Event()
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
     # Liga o servidor à classe que implementa os métodos disponibilizados
     # pelo servidor
-    wallet_pb2_grpc.add_WalletServicer_to_server(
-        Wallet(stop_event, wallets), server)
+    wallet_pb2_grpc.add_WalletServicer_to_server(Wallet(stop_event, wallets), server)
     server.add_insecure_port(f"0.0.0.0:{port}")
 
     server.start()
