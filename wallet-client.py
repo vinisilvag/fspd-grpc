@@ -1,6 +1,8 @@
 # Cliente do servidor de carteiras
 # Vinicius Gomes - 2021421869
 
+from __future__ import print_function
+
 import sys
 
 import grpc
@@ -45,7 +47,7 @@ def end_execution(stub):
 def run(wallet, wallet_addr):
     # Abre um canal para se comunicar com o servidor de carteiras
     channel = grpc.insecure_channel(f"{wallet_addr[0]}:{wallet_addr[1]}")
-    # Cria o stub
+    # Gera o stub para se comunicar com o servidor de carteiras
     stub = wallet_pb2_grpc.WalletStub(channel)
 
     while True:

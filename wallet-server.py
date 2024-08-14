@@ -70,7 +70,7 @@ class Wallet(wallet_pb2_grpc.WalletServicer):
         print("payment orders:", self.payment_orders)
 
         # Retorna o ID da ordem de pagamento criada
-        return wallet_pb2.CreatePaymentOrderReply(retval=self.payment_orders_index)
+        return wallet_pb2.CreatePaymentOrderReply(retval=self.payment_orders_index - 1)
 
     # Procedimento que transfere o valor de uma ordem de pagamento para a
     # carteira informada
@@ -124,7 +124,8 @@ def run(port, wallets):
 
     # Liga o servidor à classe que implementa os métodos disponibilizados
     # pelo servidor
-    wallet_pb2_grpc.add_WalletServicer_to_server(Wallet(stop_event, wallets), server)
+    wallet_pb2_grpc.add_WalletServicer_to_server(
+        Wallet(stop_event, wallets), server)
     server.add_insecure_port(f"0.0.0.0:{port}")
 
     server.start()

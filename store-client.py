@@ -1,6 +1,8 @@
 # Cliente do servidor de lojas
 # Vinicius Gomes - 2021421869
 
+from __future__ import print_function
+
 import sys
 
 import grpc
@@ -11,38 +13,52 @@ import wallet_pb2
 import wallet_pb2_grpc
 
 
-def sell(wallet_stub, store_stub, price):
+# Realiza a compra de um produto
+# Primeiramente, cria a ordem de pagamento com o valor do produto
+# e exibe na tela o resultado dessa chamada de procedimento
+# Caso a ordem de pagamento tenha sido criada corretamente,
+# uma requisição é feita para o servidor da loja que ficará
+# responsável por processar a venda e transferir o valor da ordem
+# de pagamento para a conta do vendedor
+# Ao final, exibe o status enviado pela chamada do procedimento
+# de venda
+def buy(wallet_stub, store_stub, price):
     # Cria a ordem de pagamento, debitando o valor do produto
     # da conta do usuário que comprou
     payment_order_response = wallet_stub.create_payment_order(
         wallet_pb2.CreatePaymentOrderRequest(wallet=buyer_wallet, value=price)
     )
     retval = payment_order_response.retval
+    print(retval)
 
     # Caso a criação da ordem de pagamento tenha sido um sucesso
-    if payment_order_response.retval not in [-1, -2]:
+    if retval not in [-1, -2]:
         # Chama o procedimento de venda no servidor, que será
         # responsável por transferir o valor da ordem de pagamento
         # para a carteira do vendedor
-        sell_response = store_stub.sell(store_pb2.SellRequest(payment_order=retval))
-        print(retval)
+        sell_response = store_stub.sell(
+            store_pb2.SellRequest(payment_order=retval))
         print(sell_response.status)
 
 
+# Realiza a requisição para terminar a execução do servidor de carteiras
 def end_execution(store_stub):
+    # Exibe na tela o saldo do vendedor e o número de ordens de
+    # pagamento pendentes
     response = store_stub.end_execution(store_pb2.EndExecutionRequest())
     print(response.balance, response.pendencies)
 
 
 def run(buyer_wallet, wallet_addr, store_addr):
     # Abre um canal para se comunicar com o servidor de carteiras
-    wallet_channel = grpc.insecure_channel(f"{wallet_addr[0]}:{wallet_addr[1]}")
-    # Cria o stub para se comunicar com o servidor da loja
+    wallet_channel = grpc.insecure_channel(
+        f"{wallet_addr[0]}:{wallet_addr[1]}")
+    # Gera o stub para se comunicar com o servidor da loja
     wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
 
     # Abre um canal para se comunicar com o servidor da loja
     store_channel = grpc.insecure_channel(f"{store_addr[0]}:{store_addr[1]}")
-    # Cria o stub para se comunicar com o servidor da loja
+    # Gera o stub para se comunicar com o servidor da loja
     store_stub = store_pb2_grpc.StoreStub(store_channel)
 
     # Lê e exibe o preço do produto vendido pelo servidor daquela loja
@@ -66,7 +82,7 @@ def run(buyer_wallet, wallet_addr, store_addr):
         match command:
             # Realiza a compra de um produto
             case "C":
-                sell(wallet_stub, store_stub, price)
+                buy(wallet_stub, store_stub, price)
 
             # Termina a execução
             case "T":

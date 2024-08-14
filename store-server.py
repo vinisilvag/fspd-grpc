@@ -6,6 +6,7 @@ import threading
 from concurrent import futures
 
 import grpc
+
 import store_pb2
 import store_pb2_grpc
 import wallet_pb2
@@ -33,18 +34,22 @@ class Store(store_pb2_grpc.StoreServicer):
         print("price:", self.price)
 
         # Abre um canal para se comunicar com o servidor de carteiras
-        wallet_channel = grpc.insecure_channel(f"{wallet_addr[0]}:{wallet_addr[1]}")
+        # e buscar o saldo da conta do vendedor
+        # Quando o valor é recebido, ele é inserido na variável `balance`
+        with grpc.insecure_channel(
+            f"{wallet_addr[0]}:{wallet_addr[1]}"
+        ) as wallet_channel:
+            wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
+            balance_response = wallet_stub.balance(
+                wallet_pb2.BalanceRequest(wallet=self.seller_wallet)
+            )
+            # A especificação não determina se essa chamada pode falhar,
+            # portanto, o código foi escrito considerando que uma carteira
+            # válida sempre será informada
+            # Dessa forma, é assumido que o valor presente em balance nesse
+            # momento é um valor válido >= 0 e não um código de erro
+            self.balance = balance_response.balance
 
-        # Cria o stub para se comunicar com o servidor de carteiras
-        # Esse stub será usado para buscar o saldo da carteira do vendedor e
-        # realizar a operação de venda (que precisa se comunicar com o servidor
-        # de carteiras para chamar o procedimento de transferência)
-        self.wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
-
-        balance_response = self.wallet_stub.balance(
-            wallet_pb2.BalanceRequest(wallet=self.seller_wallet)
-        )
-        self.balance = balance_response.retval
         print("balance:", self.balance)
 
     # Procedimento que lê o preço do produto
@@ -54,30 +59,54 @@ class Store(store_pb2_grpc.StoreServicer):
 
     # Procedimento que realiza uma venda
     def sell(self, request, context):
-        transfer_response = self.wallet_stub.transfer(
-            wallet_pb2.TransferRequest(
-                payment_order=request.payment_order,
-                recount=self.price,
-                wallet=self.seller_wallet,
+        # Abre um canal para se comunicar com o servidor de carteiras
+        # e realizar a operação de transferência da ordem de pagamento
+        # para a conta do vendedor
+        # Na especificação do trabalho, a possibilidade de erro de comunicação
+        # e o retorno do código de status de erro -9 me motivaram a fazer a
+        # abertura do canal no momento que a comunicação com o servidor de
+        # carteiras é necessária
+        # Dessa forma, é possível atingir o funcionamento desejado na
+        # especificação, o que não seria possível se o canal fosse aberto no
+        # construtor da classe do servidor da loja
+        with grpc.insecure_channel(
+            f"{wallet_addr[0]}:{wallet_addr[1]}"
+        ) as wallet_channel:
+            wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
+            transfer_response = wallet_stub.transfer(
+                wallet_pb2.TransferRequest(
+                    payment_order=request.payment_order,
+                    recount=self.price,
+                    wallet=self.seller_wallet,
+                )
             )
-        )
-        transfer_status = transfer_response.status
-        print("sell")
-        print("transfer status:", transfer_status)
-        if transfer_status in [-1, -2, -3]:
-            # erro de comunicacao com o servidor?
-            return store_pb2.SellReply(status=-9)
-        self.balance += self.price
-        print("updated balance:", self.balance)
-        return store_pb2.SellReply(status=transfer_status)
+            transfer_status = transfer_response.status
+            print("sell")
+            print("transfer status:", transfer_status)
+            if transfer_status not in [-1, -2, -3]:
+                self.balance += self.price
+            print("updated balance:", self.balance)
+            return store_pb2.SellReply(status=transfer_status)
+
+        return store_pb2.SellReply(status=-9)
 
     # Procedimento que termina o servidor da loja
     def end_execution(self, request, context):
-        # Chama o procedimento de término do servidor de carteiras
-        end_execution_response = self.wallet_stub.end_execution(
-            wallet_pb2.EndExecutionRequest()
-        )
-        pendencies = end_execution_response.pendencies
+        # Assim como na busca do saldo no começo da execução do servidor da
+        # loja, a especificação do trabalho não diz se essa chamada pode falhar
+        # ou não, portanto, estou assumindo que sempre vou conseguir terminar
+        # o servidor de carteiras normalmente e, com isso, receber o número
+        # de ordens de pagamento existentes no momento do término dele
+        with grpc.insecure_channel(
+            f"{wallet_addr[0]}:{wallet_addr[1]}"
+        ) as wallet_channel:
+            wallet_stub = wallet_pb2_grpc.WalletStub(wallet_channel)
+            # Chama o procedimento de término do servidor de carteiras
+            end_execution_response = wallet_stub.end_execution(
+                wallet_pb2.EndExecutionRequest()
+            )
+            # Recebe o número de ordens de pagamento pendentes
+            pendencies = end_execution_response.pendencies
 
         # Sinaliza o evento de encerramento do servidor
         self._stop_event.set()

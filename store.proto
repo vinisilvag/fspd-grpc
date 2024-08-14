@@ -45,8 +45,8 @@ message SellReply {
  */
 message EndExecutionRequest {}
 
-// tuple or two different fields?
+// Resposta do método que finaliza a execução do servidor da loja
 message EndExecutionReply {
-  int32 balance = 1;
-  int32 pendencies = 2;
+  int32 balance = 1;    //  Saldo do vendedor quando o servidor é encerrado
+  int32 pendencies = 2; // Número de ordens de pagamento pendentes
 }
