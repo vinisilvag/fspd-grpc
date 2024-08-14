@@ -6,7 +6,6 @@ import threading
 from concurrent import futures
 
 import grpc
-
 import store_pb2
 import store_pb2_grpc
 import wallet_pb2
@@ -27,9 +26,11 @@ class Store(store_pb2_grpc.StoreServicer):
 
         # Carteira do vendedor
         self.seller_wallet = seller_wallet
+        print("seller wallet:", self.seller_wallet)
 
         # Preço do produto
         self.price = price
+        print("price:", self.price)
 
         # Abre um canal para se comunicar com o servidor de carteiras
         wallet_channel = grpc.insecure_channel(f"{wallet_addr[0]}:{wallet_addr[1]}")
@@ -44,6 +45,7 @@ class Store(store_pb2_grpc.StoreServicer):
             wallet_pb2.BalanceRequest(wallet=self.seller_wallet)
         )
         self.balance = balance_response.retval
+        print("balance:", self.balance)
 
     # Procedimento que lê o preço do produto
     def read_price(self, request, context):
@@ -60,9 +62,13 @@ class Store(store_pb2_grpc.StoreServicer):
             )
         )
         transfer_status = transfer_response.status
+        print("sell")
+        print("transfer status:", transfer_status)
         if transfer_status in [-1, -2, -3]:
             # erro de comunicacao com o servidor?
             return store_pb2.SellReply(status=-9)
+        self.balance += self.price
+        print("updated balance:", self.balance)
         return store_pb2.SellReply(status=transfer_status)
 
     # Procedimento que termina o servidor da loja
@@ -86,7 +92,8 @@ def run(price, port, seller_wallet, wallet_addr):
     stop_event = threading.Event()
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
-    # Liga o servidor à classe que implementa os métodos disponibilizados pelo servidor
+    # Liga o servidor à classe que implementa os métodos disponibilizados
+    # pelo servidor
     store_pb2_grpc.add_StoreServicer_to_server(
         Store(stop_event, wallet_addr, seller_wallet, price), server
     )

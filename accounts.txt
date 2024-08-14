@@ -1,3 +1,2 @@
 Dorgival 10
-Bezos 1000000
-Papai_Noel 100000
+Vinicius 20

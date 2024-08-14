@@ -11,6 +11,29 @@ import wallet_pb2
 import wallet_pb2_grpc
 
 
+def sell(wallet_stub, store_stub, price):
+    # Cria a ordem de pagamento, debitando o valor do produto
+    # da conta do usuário que comprou
+    payment_order_response = wallet_stub.create_payment_order(
+        wallet_pb2.CreatePaymentOrderRequest(wallet=buyer_wallet, value=price)
+    )
+    retval = payment_order_response.retval
+
+    # Caso a criação da ordem de pagamento tenha sido um sucesso
+    if payment_order_response.retval not in [-1, -2]:
+        # Chama o procedimento de venda no servidor, que será
+        # responsável por transferir o valor da ordem de pagamento
+        # para a carteira do vendedor
+        sell_response = store_stub.sell(store_pb2.SellRequest(payment_order=retval))
+        print(retval)
+        print(sell_response.status)
+
+
+def end_execution(store_stub):
+    response = store_stub.end_execution(store_pb2.EndExecutionRequest())
+    print(response.balance, response.pendencies)
+
+
 def run(buyer_wallet, wallet_addr, store_addr):
     # Abre um canal para se comunicar com o servidor de carteiras
     wallet_channel = grpc.insecure_channel(f"{wallet_addr[0]}:{wallet_addr[1]}")
@@ -28,38 +51,28 @@ def run(buyer_wallet, wallet_addr, store_addr):
     print(price)
 
     while True:
-        line = input()
-        command, *args = line.split(" ")
+        # Lê uma linha da entrada e em caso de EOFError
+        # (fim da leitura) sai do loop
+        try:
+            line = input()
+        except EOFError:
+            break
+
+        if not line:
+            continue
+
+        # Separa o comando do restante do conteúdo da linha lida
+        command = line[0]
         match command:
             # Realiza a compra de um produto
             case "C":
-                # Cria a ordem de pagamento, debitando o valor do produto
-                # da conta do usuário que comprou
-                payment_order_response = wallet_stub.create_payment_order(
-                    wallet_pb2.CreatePaymentOrderRequest(
-                        wallet=buyer_wallet, value=price
-                    )
-                )
-                retval = payment_order_response.retval
-
-                # Caso a criação da ordem de pagamento tenha sido um sucesso
-                if payment_order_response.retval not in [-1, -2]:
-                    # Chama o procedimento de venda no servidor, que será
-                    # responsável por transferir o valor da ordem de pagamento
-                    # para a carteira do vendedor
-                    sell_response = store_stub.sell(
-                        store_pb2.SellRequest(payment_order=retval)
-                    )
-                    print(retval)
-                    print(sell_response.status)
+                sell(wallet_stub, store_stub, price)
 
             # Termina a execução
             case "T":
-                # Chama o procedimento através do stub
-                response = store_stub.end_execution(store_pb2.EndExecutionRequest())
-                print(response.balance, response.pendencies)
-
+                end_execution(store_stub)
                 break
+
             case _:
                 pass
 

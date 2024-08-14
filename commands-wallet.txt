@@ -1,0 +1,10 @@
+S
+O 60
+O 10
+O 10
+S
+X 3 10 Dorgival
+X 1 11 Dorgival
+X 1 10 Dorgivall
+X 1 10 Dorgival
+F
