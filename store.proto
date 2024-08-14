@@ -1,23 +1,51 @@
+/* Arquivo que define a interface de comunicação entre o cliente e o servidor de
+ * carteiras
+ */
+
+// Usando a versão proto3 da linguagem de protocol buffers
 syntax = "proto3";
 
+// Nome do pacote
 package store;
 
+// Definição do serviço de Loja
 service Store {
+  /* Para cada método, será definido qual o formato da mensagem de requisição e
+   * qual o formato da mensagem de resposta. Esses formatos estão definidos
+   * abaixo de forma generalizável.
+   */
   rpc read_price(ReadPriceRequest) returns (ReadPriceReply) {}
   rpc sell(SellRequest) returns (SellReply) {}
   rpc end_execution(EndExecutionRequest) returns (EndExecutionReply) {}
 }
 
+// Requisição para ler o preço do produto (não recebe nenhum parâmetro)
 message ReadPriceRequest {}
 
-message ReadPriceReply { int32 price = 1; }
+// Resposta do método de leitura de preço
+message ReadPriceReply {
+  int32 price = 1; // Preço do produto
+}
 
-message SellRequest { int32 payment_order = 1; }
+// Requisição para realizar a venda de um produto
+message SellRequest {
+  int32 payment_order = 1; // Ordem de pagamento referente ao produto
+}
 
-message SellReply { int32 status = 1; }
+// Resposta do método que realiza a venda de um produto
+message SellReply {
+  /* Status retornado pela transferência realizada no servidor
+   * de carteiras
+   */
+  int32 status = 1;
+}
 
+/* Requisição para terminar a execução do servidor de loja (não recebe nenhum
+ * parâmetro)
+ */
 message EndExecutionRequest {}
 
+// tuple or two different fields?
 message EndExecutionReply {
   int32 balance = 1;
   int32 pendencies = 2;

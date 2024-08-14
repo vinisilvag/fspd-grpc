@@ -1,8 +1,19 @@
+/* Arquivo que define a interface de comunicação entre o cliente e o servidor de
+ * carteiras
+ */
+
+// Usando a versão proto3 da linguagem de protocol buffers
 syntax = "proto3";
 
+// Nome do pacote
 package wallet;
 
+// Definição do serviço de Carteira
 service Wallet {
+  /* Para cada método, será definido qual o formato da mensagem de requisição e
+   * qual o formato da mensagem de resposta. Esses formatos estão definidos
+   * abaixo de forma generalizável.
+   */
   rpc balance(BalanceRequest) returns (BalanceReply) {}
   rpc create_payment_order(CreatePaymentOrderRequest)
       returns (CreatePaymentOrderReply) {}
@@ -10,25 +21,63 @@ service Wallet {
   rpc end_execution(EndExecutionRequest) returns (EndExecutionReply) {}
 }
 
-message BalanceRequest { string wallet = 1; }
-
-message BalanceReply { int32 value = 1; }
-
-message CreatePaymentOrderRequest {
-  string wallet = 1;
-  int32 value = 2;
+// Requisição para buscar o saldo de uma carteira
+message BalanceRequest {
+  string wallet = 1; // Carteira que se deseja buscar o saldo
 }
 
-message CreatePaymentOrderReply { int32 retval = 1; }
+// Resposta do método que busca o saldo de uma carteira
+message BalanceReply {
+  int32 balance = 1; // Saldo
+}
 
+// Requisição para criar uma ordem de pagamento
+message CreatePaymentOrderRequest {
+  string wallet = 1; // Carteira onde o valor será debitado
+  int32 value = 2;   // Valor a ser debitado
+}
+
+// Resposta do método de criar uma ordem de pagamento
+message CreatePaymentOrderReply {
+  /* retval pode valer:
+   * - O ID da ordem de pagamento criada, nesse caso retval >= 1
+   * - -1, caso a carteira informada não exista
+   * - -2, caso o saldo em conta seja insuficiente
+   */
+  int32 retval = 1;
+}
+
+/* Realiza a transferência de uma ordem de pagamento para a carteira passada
+ * como parâmetro
+ */
 message TransferRequest {
-  int32 payment_order = 1;
+  int32 payment_order = 1; // Ordem de pagamento
+  // Valor para conferência com o que foi registrado na ordem de pagamento
   int32 recount = 2;
+  // Carteira para a qual o valor da ordem de pagamento será transferido
   string wallet = 3;
 }
 
-message TransferReply { int32 status = 1; }
+/* Resposta do método de transferência de uma ordem de pagamento para uma
+ * carteira
+ */
+message TransferReply {
+  /* status pode valer:
+   * - 0 em caso de sucesso
+   * - -1, caso a ordem de pagamento informada não exista
+   * - -2, caso o valor de conferência é diferente do valor contido na ordem de
+   * pagamento
+   * - -3, caso a carteira informada não exista
+   */
+  int32 status = 1;
+}
 
+/* Requisição para terminar a execução do servidor de carteiras (não recebe
+ * nenhum parâmetro)
+ */
 message EndExecutionRequest {}
 
-message EndExecutionReply { int32 pendencies = 1; }
+// Resposta do método que finaliza a execução do servidor de carteiras
+message EndExecutionReply {
+  int32 pendencies = 1; // Número de ordens de pagamento existentes
+}
